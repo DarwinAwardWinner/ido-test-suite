@@ -1,8 +1,11 @@
 .PHONY: test
 
-all: test
+all: test test-included-ido
 
 test:
-	cask exec buttercup -L . tests
+	cask exec buttercup tests
 
-all-tests: test
+test-included-ido:
+	cask exec buttercup -L included-ido tests
+
+all-tests: test test-included-ido
