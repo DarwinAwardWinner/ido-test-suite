@@ -5,6 +5,8 @@
 (require 'buttercup)
 (require 'with-simulated-input)
 
+(message "Ido location: %S" (locate-library "ido"))
+
 ;; Note: Currently unused, but potentially useful in the future
 (defun ido-cr+-maybe-chop (items elem)
   "Like `ido-chop', but a no-op if ELEM is not in ITEMS.
@@ -150,7 +152,7 @@ also accept a quoted list for the sake of convenience."
   (after-each
     (fully-unshadow-all-vars))
 
-  (describe "basic functionality"
+  (describe "ido-completing-read"
 
     (it "should accept a matching completion"
       (expect
@@ -183,15 +185,21 @@ also accept a quoted list for the sake of convenience."
          (ido-completing-read "Prompt: " '("yellow" "brown" "blue" "green")))
        :to-equal "b")))
 
+  (xdescribe "ido file operations"
+    (xdescribe "ido-read-file-name")
+    (xdescribe "ido-read-directory-name")
+    (xdescribe "ido-find-file")
+    (xdescribe "ido-write-file")
+    (xdescribe "ido-dired"))
+  (xdescribe "ido buffer operations"
+    (xdescribe "ido-read-buffer")
+    ;; Use `save-window-excursion' liberally
+    (xdescribe "ido-switch-buffer"))
+
   (describe "regression tests"
 
-    (it "should not exhibit bug #19412"
-      (expect
-       (with-simulated-input "C-f RET"
-         (ido-read-file-name
-          "Pick a file (default ~/temp/test.R): "
-          "~/" "~/temp/test.R"))
-       :to-equal "~/temp/test.R")
+    ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=19412
+    (xit "should not exhibit bug #19412"
 
       (expect
        (with-simulated-input "/ t m p / C-f RET"
@@ -214,6 +222,12 @@ also accept a quoted list for the sake of convenience."
                  buffer-file-name "~/temp/test.R")
            (with-simulated-input "/ / t m p / C-f RET"
              (call-interactively 'ido-write-file))))
-       :to-equal "/tmp/"))))
+       :to-equal "/tmp/"))
+
+    ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=11861
+    (xit "should not exhibit bug #11861")
+
+    ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=1516
+    (xit "should not exhibit bug #1516")))
 
 ;;; test-ido.el ends here
