@@ -1,5 +1,6 @@
 ;;; -*- lexical-binding: t -*-
 
+(require 'f)
 (require 'ido)
 (require 'cl-lib)
 (require 'buttercup)
@@ -134,6 +135,31 @@ also accept a quoted list for the sake of convenience."
        (when (get-buffer temp-bufname)
          (kill-buffer temp-bufname)))))
 
+(defmacro with-temp-dir (&rest body)
+  "Evaluate BODY in a temporary directory.
+
+While BODY is evaluating, `default-directory' will be set to the
+temporary directory, and then the directory will be deleted when
+BODY is done executing."
+  (declare (indent 0))
+  `(let* ((tmpdir (make-temp-file nil t))
+          (default-directory tmpdir))
+     (unwind-protect
+         (progn ,@body)
+       (when (f-exists? tmpdir)
+         (f-delete tmpdir t)))))
+
+(defun f-same-path? (path-a path-b)
+  "Like `f-same?' but works on nonexistent paths.
+
+This will return non-nil for any paths that `f-same?' returns
+non-nil on, but in addition, it will return non-nil if PATH-A and
+PATH-B can be positively identified as equivalent paths to the
+same nonexistent file."
+  (equal
+   (f-canonical (directory-file-name (f-expand path-a)))
+   (f-canonical (directory-file-name (f-expand path-b)))))
+
 (describe "ido"
 
   ;; Reset all of these variables to their standard values before each
@@ -185,22 +211,186 @@ also accept a quoted list for the sake of convenience."
          (ido-completing-read "Prompt: " '("yellow" "brown" "blue" "green")))
        :to-equal "b")))
 
-  (xdescribe "ido file operations"
-    (xdescribe "ido-read-file-name")
-    (xdescribe "ido-read-directory-name")
-    (xdescribe "ido-find-file")
-    (xdescribe "ido-write-file")
-    (xdescribe "ido-dired"))
-  (xdescribe "ido buffer operations"
-    (xdescribe "ido-read-buffer")
+  (describe "ido file operations"
+
+    (describe "ido-read-file-name"
+      (it "Should allow selecting an existing file with RET"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+
+          (expect
+           (f-same-path?
+            (with-simulated-input "RET"
+              (ido-read-file-name "Pick a file: "))
+            "a.txt"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "b.txt RET"
+              (ido-read-file-name "Pick a file: "))
+            "b.txt"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "b RET"
+              (ido-read-file-name "Pick a file: "))
+            "b.txt"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "<right> RET"
+              (ido-read-file-name "Pick a file: "))
+            "b.txt"))))
+
+      (it "Should allow falling back to default completion with C-f"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+
+          (expect
+           (f-same-path?
+            (with-simulated-input "b C-f RET"
+              (ido-read-file-name "Pick a file: "))
+            "b"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "C-f b RET"
+              (ido-read-file-name "Pick a file: "))
+            "b"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "b C-f TAB RET"
+              (ido-read-file-name "Pick a file: "))
+            "b.txt"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "C-f b.txt RET"
+              (ido-read-file-name "Pick a file: "))
+            "b.txt")))))
+    (describe "ido-read-directory-name"
+      (it "Should allow selecting an existing directory with RET"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+          ;; Let's create some dirs
+          (make-directory "d.dir")
+          (make-directory "e.dir")
+          (make-directory "f.dir")
+
+          (expect
+           (f-same-path?
+            (with-simulated-input "RET"
+              (ido-read-directory-name "pick a dir: "))
+            default-directory))
+          (expect
+           (f-same-path?
+            (with-simulated-input "e.dir RET RET"
+              (ido-read-directory-name "pick a dir: "))
+            "e.dir"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "e RET RET"
+              (ido-read-directory-name "pick a dir: "))
+            "e.dir"))
+          (expect
+           (f-same-path?
+            (with-simulated-input "<right> RET RET"
+              (ido-read-directory-name "pick a dir: "))
+            "d.dir"))))
+
+      (it "Should not allow selecting an existing non-directory file with RET"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+          ;; Let's create some dirs
+          (make-directory "d.dir")
+          (make-directory "e.dir")
+          (make-directory "f.dir")
+
+          (expect
+           (with-simulated-input "a RET"
+             (ido-read-directory-name "pick a dir: " nil nil t))
+           :to-throw 'error))))
+
+    (describe "ido-find-file"
+      (it "should allow finding an existing file with RET"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+          ;; Let's create some dirs
+          (make-directory "d.dir")
+          (make-directory "e.dir")
+          (make-directory "f.dir")
+
+          (expect
+           (f-same-path?
+            (save-window-excursion
+              (with-simulated-input "RET"
+                (call-interactively 'ido-find-file))
+              buffer-file-name)
+            "a.txt"))
+
+          (expect
+           (f-same-path?
+            (save-window-excursion
+              (with-simulated-input "b RET"
+                (call-interactively 'ido-find-file))
+              buffer-file-name)
+            "b.txt"))))
+
+      (it "should allow finding new files"
+        (with-temp-dir
+          ;; Let's create some files
+          (write-region "" nil "a.txt")
+          (write-region "" nil "b.txt")
+          (write-region "" nil "c.txt")
+          ;; Let's create some dirs
+          (make-directory "d.dir")
+          (make-directory "e.dir")
+          (make-directory "f.dir")
+
+          (expect
+           (f-same-path?
+            (save-window-excursion
+              (with-simulated-input "b C-j"
+                (call-interactively 'ido-find-file))
+              buffer-file-name)
+            "b"))
+          (expect
+           (f-same-path?
+            (save-window-excursion
+              (with-simulated-input "g RET RET"
+                (call-interactively 'ido-find-file))
+              buffer-file-name)
+            "g"))
+          (expect
+           (f-same-path?
+            (save-window-excursion
+              (with-simulated-input "e / hello C-j"
+                (call-interactively 'ido-find-file))
+              buffer-file-name)
+            "e.dir/hello")))))
+    (describe "ido-write-file")
+    (describe "ido-dired"))
+  (describe "ido buffer operations"
+    (describe "ido-read-buffer")
     ;; Use `save-window-excursion' liberally
-    (xdescribe "ido-switch-buffer"))
+    (describe "ido-switch-buffer"))
 
   (describe "regression tests"
 
     ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=19412
     (xit "should not exhibit bug #19412"
 
+      ;; TODO: Do this with more controlled paths
       (expect
        (with-simulated-input "/ t m p / C-f RET"
          (ido-read-file-name
