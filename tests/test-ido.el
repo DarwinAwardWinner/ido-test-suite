@@ -181,6 +181,39 @@ also accept a quoted list for the sake of convenience."
       (expect
        (with-simulated-input "b C-j"
          (ido-completing-read "Prompt: " '("yellow" "brown" "blue" "green")))
-       :to-equal "b"))))
+       :to-equal "b")))
+
+  (describe "regression tests"
+
+    (it "should not exhibit bug #19412"
+      (expect
+       (with-simulated-input "C-f RET"
+         (ido-read-file-name
+          "Pick a file (default ~/temp/test.R): "
+          "~/" "~/temp/test.R"))
+       :to-equal "~/temp/test.R")
+
+      (expect
+       (with-simulated-input "/ t m p / C-f RET"
+         (ido-read-file-name
+          "Pick a file (default ~/temp/test.R): "
+          "~/" "~/temp/test.R"))
+       :to-equal "/tmp/")
+
+      (expect
+       (cl-letf*
+           ;; Redefine `write-file' as a no-op stub with the same
+           ;; interactive form that just returns its argument
+           ((write-file-intform (interactive-form 'write-file))
+            ((symbol-function 'write-file)
+             `(lambda (filename &optional confirm) ,write-file-intform
+                (message "Would have written file: %S" filename)
+                filename)))
+         (with-temp-buffer
+           (setq default-directory "~/temp/"
+                 buffer-file-name "~/temp/test.R")
+           (with-simulated-input "/ / t m p / C-f RET"
+             (call-interactively 'ido-write-file))))
+       :to-equal "/tmp/"))))
 
 ;;; test-ido.el ends here
