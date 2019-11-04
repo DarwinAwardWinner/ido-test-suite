@@ -37,4 +37,4 @@ before_script:
   - cask install
 
 script:
-  - make
+  - make -k
