@@ -476,14 +476,6 @@ function avoids killing that buffer at the end of BODY. "
     ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=19412
     (xit "should not exhibit bug #19412"
 
-      ;; TODO: Do this with more controlled paths
-      ;; (expect
-      ;;  (with-simulated-input "//tmp/ C-f RET"
-      ;;    (ido-read-file-name
-      ;;     "Pick a file (default ~/temp/test.R): "
-      ;;     "~/" "~/temp/test.R"))
-      ;;  :to-equal "/tmp/")
-
       (with-temp-dir
         ;; Let's create some dirs
         (make-directory "d.dir")
@@ -494,6 +486,17 @@ function avoids killing that buffer at the end of BODY. "
         (write-region "" nil (f-join "e.dir" "b.txt"))
         (write-region "" nil (f-join "f.dir" "c.txt"))
 
+        ;; This works
+        (expect
+         (f-same?
+          (with-simulated-input "e.dir/ C-j"
+            (ido-read-file-name
+             "Pick a file: "
+             default-directory
+             (f-join "d.dir" "a.txt")))
+          (f-join default-directory "e.dir")))
+
+        ;; This doesn't work
         (expect
          (f-same?
           (with-simulated-input "e.dir/ C-f RET"
@@ -503,10 +506,14 @@ function avoids killing that buffer at the end of BODY. "
              (f-join "d.dir" "a.txt")))
           (f-join default-directory "e.dir")))
 
-        (let ((buffer-file-name "d.dir/a.txt"))
-          (with-simulated-input "e.dir/ C-f RET"
-            (call-interactively 'ido-write-file))
-          (expect (f-exists? "e.dir/a.txt")))))
+        ;; This also doesn't work
+        (with-temp-buffer
+          (let ((buffer-file-name "d.dir/a.txt"))
+            (expect
+             (with-simulated-input "e.dir/ C-f RET"
+               (call-interactively 'ido-write-file))
+             :not :to-throw)
+            (expect (f-exists? "e.dir/a.txt"))))))
 
     ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=11861
     (xit "should not exhibit bug #11861")
