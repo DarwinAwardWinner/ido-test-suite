@@ -160,6 +160,23 @@ same nonexistent file."
    (f-canonical (directory-file-name (f-expand path-a)))
    (f-canonical (directory-file-name (f-expand path-b)))))
 
+(defmacro with-named-temp-buffers (buffer-names &rest body)
+  "Create several named buffers, then eval BODY, then kill them.
+
+If any of BUFFER-NAMES is the same as an existing buffer, this
+function avoids killing that buffer at the end of BODY. "
+  (declare (indent 1))
+  `(let ((created-buffers nil))
+     (unwind-protect
+         (progn
+           (cl-loop
+            for bufname in ',buffer-names
+            if (get-buffer bufname) do (ignore)
+            else do (push (get-buffer-create bufname) created-buffers))
+           ,@body)
+       (cl-loop for buf in created-buffers
+                do (kill-buffer buf)))))
+
 (describe "ido"
 
   ;; Reset all of these variables to their standard values before each
@@ -243,6 +260,7 @@ same nonexistent file."
             "b.txt"))))
 
       (it "Should allow falling back to default completion with C-f"
+        (spy-on 'read-file-name :and-call-through)
         (with-temp-dir
           ;; Let's create some files
           (write-region "" nil "a.txt")
@@ -268,7 +286,9 @@ same nonexistent file."
            (f-same-path?
             (with-simulated-input "C-f b.txt RET"
               (ido-read-file-name "Pick a file: "))
-            "b.txt")))))
+            "b.txt"))
+          (expect 'read-file-name :to-have-been-called))))
+
     (describe "ido-read-directory-name"
       (it "Should allow selecting an existing directory with RET"
         (with-temp-dir
@@ -381,9 +401,54 @@ same nonexistent file."
     (describe "ido-write-file")
     (describe "ido-dired"))
   (describe "ido buffer operations"
-    (describe "ido-read-buffer")
+    (describe "ido-read-buffer"
+
+      (it "should allow selecting an existing buffer with RET"
+        (expect
+         (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+           (with-simulated-input "ido-test-buf- RET"
+             (ido-read-buffer "Pick a buffer: " nil t
+                              ;; TODO: ido-read-buffer ignores predicate???
+                              (lambda (item) (string-match-p "\\`ido-test-" (car-safe item))))))
+         :to-match "\\`ido-test-buf-.\\'"))
+      (it "should allow selecting a new buffer name with RET RET"
+        (expect
+         (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+           (with-simulated-input "ido-test-buf-D RET RET"
+             (ido-read-buffer "Pick a buffer: ")))
+         :to-equal "ido-test-buf-D"))
+      (it "should allow falling back to default completion with C-f"
+        (spy-on 'read-buffer :and-call-through)
+        (expect
+         (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+           (with-simulated-input "ido-test-buf- C-x C-b RET"
+             (ido-read-buffer "Pick a buffer: ")))
+         :to-equal "ido-test-buf-")
+        (expect
+         (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+           (with-simulated-input "ido-test-buf-D C-x C-b RET"
+             (ido-read-buffer "Pick a buffer: ")))
+         :to-equal "ido-test-buf-D")
+        (expect 'read-buffer :to-have-been-called)))
     ;; Use `save-window-excursion' liberally
-    (describe "ido-switch-buffer"))
+    (describe "ido-switch-buffer"
+      (it "should allow switching to an existing buffer with RET"
+        (save-window-excursion
+          (expect
+           (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+             (with-simulated-input "ido-test-buf- RET"
+               (call-interactively 'ido-switch-buffer))
+             (buffer-name))
+           :to-match "\\`ido-test-buf-.\\'")))
+      (it "should allow creating a new buffer with RET RET"
+        (spy-on 'read-buffer :and-call-through)
+        (expect
+         (with-named-temp-buffers ("ido-test-buf-A" "ido-test-buf-B" "ido-test-buf-C")
+           (with-simulated-input "ido-test-buf-D RET RET"
+             (call-interactively 'ido-switch-buffer))
+           (prog1 (buffer-name)
+             (kill-buffer)))
+         :to-equal "ido-test-buf-D"))))
 
   (describe "regression tests"
 
@@ -410,7 +475,7 @@ same nonexistent file."
          (with-temp-buffer
            (setq default-directory "~/temp/"
                  buffer-file-name "~/temp/test.R")
-           (with-simulated-input "/ / t m p / C-f RET"
+           (with-simulated-input "//tmp/ C-f RET"
              (call-interactively 'ido-write-file))))
        :to-equal "/tmp/"))
 
