@@ -456,28 +456,36 @@ function avoids killing that buffer at the end of BODY. "
     (xit "should not exhibit bug #19412"
 
       ;; TODO: Do this with more controlled paths
-      (expect
-       (with-simulated-input "/ t m p / C-f RET"
-         (ido-read-file-name
-          "Pick a file (default ~/temp/test.R): "
-          "~/" "~/temp/test.R"))
-       :to-equal "/tmp/")
+      ;; (expect
+      ;;  (with-simulated-input "//tmp/ C-f RET"
+      ;;    (ido-read-file-name
+      ;;     "Pick a file (default ~/temp/test.R): "
+      ;;     "~/" "~/temp/test.R"))
+      ;;  :to-equal "/tmp/")
 
-      (expect
-       (cl-letf*
-           ;; Redefine `write-file' as a no-op stub with the same
-           ;; interactive form that just returns its argument
-           ((write-file-intform (interactive-form 'write-file))
-            ((symbol-function 'write-file)
-             `(lambda (filename &optional confirm) ,write-file-intform
-                (message "Would have written file: %S" filename)
-                filename)))
-         (with-temp-buffer
-           (setq default-directory "~/temp/"
-                 buffer-file-name "~/temp/test.R")
-           (with-simulated-input "//tmp/ C-f RET"
-             (call-interactively 'ido-write-file))))
-       :to-equal "/tmp/"))
+      (with-temp-dir
+        ;; Let's create some dirs
+        (make-directory "d.dir")
+        (make-directory "e.dir")
+        (make-directory "f.dir")
+        ;; Let's create some files in those dirs
+        (write-region "" nil (f-join "d.dir" "a.txt"))
+        (write-region "" nil (f-join "e.dir" "b.txt"))
+        (write-region "" nil (f-join "f.dir" "c.txt"))
+
+        (expect
+         (f-same?
+          (with-simulated-input "e.dir/ C-f RET"
+            (ido-read-file-name
+             "Pick a file: "
+             default-directory
+             (f-join "d.dir" "a.txt")))
+          (f-join default-directory "e.dir")))
+
+        (let ((buffer-file-name "d.dir/a.txt"))
+          (with-simulated-input "e.dir/ C-f RET"
+            (call-interactively 'ido-write-file))
+          (expect (f-exists? "e.dir/a.txt")))))
 
     ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=11861
     (xit "should not exhibit bug #11861")
