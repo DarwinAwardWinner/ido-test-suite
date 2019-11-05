@@ -398,7 +398,28 @@ function avoids killing that buffer at the end of BODY. "
                 (call-interactively 'ido-find-file))
               buffer-file-name)
             "e.dir/hello")))))
-    (describe "ido-write-file")
+    (describe "ido-write-file"
+      (it "should allow writing new files with RET RET"
+        (with-temp-dir
+          (with-temp-buffer
+            (insert "Contents of x.txt")
+            (with-simulated-input "x.txt RET RET"
+              (call-interactively 'ido-write-file)))
+          (expect (f-exists? "x.txt"))))
+
+      ;; Can't get this one to work for some reason
+      (xit "should allow overwriting existing files with RET y"
+        (with-temp-dir
+          (write-region "Old contents of b.txt" nil "b.txt")
+          (expect (f-read-text "b.txt")
+                  :to-match "Old contents")
+          (with-temp-buffer
+            (insert "New contents of b.txt")
+            (setq buffer-file-name (f-canonical "b.txt"))
+            (with-simulated-input "b.txt RET y"
+              (call-interactively 'ido-write-file)))
+          (expect (f-read-text "b.txt")
+                  :to-match "New contents"))))
     (describe "ido-dired"))
   (describe "ido buffer operations"
     (describe "ido-read-buffer"
